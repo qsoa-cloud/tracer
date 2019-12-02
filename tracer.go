@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"strconv"
@@ -40,13 +41,19 @@ func (t *Tracer) Inject(sc opentracing.SpanContext, format interface{}, carrier 
 	}
 
 	switch format {
-	case opentracing.HTTPHeaders:
+	case opentracing.HTTPHeaders, opentracing.TextMap:
 		carrier, ok := carrier.(opentracing.TextMapWriter)
 		if !ok {
 			return opentracing.ErrInvalidCarrier
 		}
 		carrier.Set("X-TRACE-ID", strconv.FormatUint(sCtx.TraceID, 16))
 		carrier.Set("X-SPAN-ID", strconv.FormatUint(sCtx.SpanID, 16))
+	case opentracing.Binary:
+		carrier, ok := carrier.(io.Writer)
+		if !ok {
+			return opentracing.ErrInvalidCarrier
+		}
+		_, _ = fmt.Fprintf(carrier, "%d %d", sCtx.TraceID, sCtx.SpanID)
 	default:
 		return opentracing.ErrUnsupportedFormat
 	}
@@ -55,29 +62,67 @@ func (t *Tracer) Inject(sc opentracing.SpanContext, format interface{}, carrier 
 }
 
 func (t *Tracer) Extract(format interface{}, opaqueCarrier interface{}) (opentracing.SpanContext, error) {
-	carrier, ok := opaqueCarrier.(opentracing.TextMapReader)
-	if !ok {
-		return nil, opentracing.ErrInvalidCarrier
+	var traceID, spanID uint64
+
+	switch format {
+	case opentracing.TextMap:
+
+	case opentracing.HTTPHeaders:
+
+	case opentracing.Binary:
+
+	default:
+		return nil, opentracing.ErrUnsupportedFormat
 	}
 
-	var traceID, spanID uint64
-	if err := carrier.ForeachKey(func(k, v string) error {
-		var err error
-		switch strings.ToLower(k) {
-		case "x-trace-id":
-			traceID, err = strconv.ParseUint(v, 16, 64)
-			if err != nil {
-				return err
+	switch carrier := opaqueCarrier.(type) {
+	case opentracing.TextMapCarrier:
+		if err := carrier.ForeachKey(func(k, v string) error {
+			var err error
+			switch strings.ToLower(k) {
+			case "x-trace-id":
+				traceID, err = strconv.ParseUint(v, 16, 64)
+				if err != nil {
+					return err
+				}
+			case "x-span-id":
+				spanID, err = strconv.ParseUint(v, 16, 64)
+				if err != nil {
+					return err
+				}
 			}
-		case "x-span-id":
-			spanID, err = strconv.ParseUint(v, 16, 64)
-			if err != nil {
-				return err
-			}
+			return nil
+		}); err != nil {
+			return nil, err
 		}
-		return nil
-	}); err != nil {
-		return nil, err
+
+	case opentracing.HTTPHeadersCarrier:
+		if err := carrier.ForeachKey(func(k, v string) error {
+			var err error
+			switch strings.ToLower(k) {
+			case "x-trace-id":
+				traceID, err = strconv.ParseUint(v, 16, 64)
+				if err != nil {
+					return err
+				}
+			case "x-span-id":
+				spanID, err = strconv.ParseUint(v, 16, 64)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+
+	case io.Reader:
+		_, err := fmt.Fscanf(carrier, "%d %d", &traceID, &spanID)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, opentracing.ErrInvalidCarrier
 	}
 
 	return &SpanContext{

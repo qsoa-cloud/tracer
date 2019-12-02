@@ -21,18 +21,18 @@ func NewSpan(tracer *Tracer, operation string, opts *opentracing.StartSpanOption
 	s := &Span{
 		tracer:    tracer,
 		Operation: operation,
-		StartTime: opts.StartTime,
 		Ctx: &SpanContext{
 			SpanID: tracer.genId(),
 		},
-		Tags: opts.Tags,
 	}
 
-	if s.StartTime.IsZero() {
+	if opts == nil || opts.StartTime.IsZero() {
 		s.StartTime = time.Now()
+	} else {
+		s.StartTime = opts.StartTime
 	}
 
-	if len(opts.References) > 0 {
+	if opts != nil {
 		for _, ref := range opts.References {
 			if ref.Type != opentracing.ChildOfRef {
 				continue
@@ -41,6 +41,8 @@ func NewSpan(tracer *Tracer, operation string, opts *opentracing.StartSpanOption
 			s.Ctx.ParentSpanId = ref.ReferencedContext.(*SpanContext).SpanID
 			break
 		}
+
+		s.Tags = opts.Tags
 	}
 
 	if s.Ctx.TraceID == 0 {
@@ -61,12 +63,12 @@ func (s *Span) Finish() {
 func (s *Span) FinishWithOptions(opts opentracing.FinishOptions) {
 	s.FinishTime = opts.FinishTime
 
-	if opts.LogRecords != nil {
-		panic("LogRecords field in opentracing.FinishOptions is deprecated")
+	for _, r := range opts.LogRecords {
+		s.LogFields(r.Fields...)
 	}
 
-	if opts.BulkLogData != nil {
-		panic("BulkLogData field in opentracing.FinishOptions is deprecated")
+	for _, d := range opts.BulkLogData {
+		s.LogFields(d.ToLogRecord().Fields...)
 	}
 }
 
@@ -75,7 +77,9 @@ func (s *Span) Context() opentracing.SpanContext {
 }
 
 func (s *Span) SetOperationName(operationName string) opentracing.Span {
-	panic("implement me")
+	s.Operation = operationName
+
+	return s
 }
 
 func (s *Span) SetTag(key string, value interface{}) opentracing.Span {
@@ -98,15 +102,21 @@ func (s *Span) LogFields(fields ...log.Field) {
 }
 
 func (s *Span) LogKV(alternatingKeyValues ...interface{}) {
-	panic("implement me")
+	fields, err := log.InterleavedKVToFields(alternatingKeyValues...)
+	if err != nil {
+		panic(err)
+	}
+	s.LogFields(fields...)
 }
 
 func (s *Span) SetBaggageItem(restrictedKey, value string) opentracing.Span {
-	panic("implement me")
+	//panic("implement me")
+	return s
 }
 
 func (s *Span) BaggageItem(restrictedKey string) string {
-	panic("implement me")
+	//panic("implement me")
+	return ""
 }
 
 func (s *Span) Tracer() opentracing.Tracer {
@@ -114,13 +124,20 @@ func (s *Span) Tracer() opentracing.Tracer {
 }
 
 func (s *Span) LogEvent(event string) {
-	panic("implement me")
+	s.Log(opentracing.LogData{
+		Timestamp: time.Now(),
+		Event:     event,
+	})
 }
 
 func (s *Span) LogEventWithPayload(event string, payload interface{}) {
-	panic("implement me")
+	s.Log(opentracing.LogData{
+		Timestamp: time.Now(),
+		Event:     event,
+		Payload:   payload,
+	})
 }
 
 func (s *Span) Log(data opentracing.LogData) {
-	panic("implement me")
+	s.LogFields(data.ToLogRecord().Fields...)
 }
