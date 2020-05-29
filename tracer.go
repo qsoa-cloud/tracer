@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -132,7 +133,7 @@ func (t *Tracer) Extract(format interface{}, opaqueCarrier interface{}) (opentra
 }
 
 func (t *Tracer) genId() uint64 {
-	return GetId()
+	return rand.Uint64()
 }
 
 func (t *Tracer) writeSpan(span *Span) {
